@@ -1,0 +1,14 @@
+Edinburgh;17.4
+Dallas;17.1
+Toamasina;17.1
+Sapporo;8.2
+Makurdi;16.2
+Athens;23.2
+Phnom Penh;30.7
+Gaborone;25.9
+Antsiranana;19.4
+Minsk;12.8
+Nicosia;8.9
+Arkhangelsk;4.0
+Dublin;28.2
+Belgrade;16.5
