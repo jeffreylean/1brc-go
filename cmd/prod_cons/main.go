@@ -43,7 +43,6 @@ func main() {
 	reader := bufio.NewReader(file)
 
 	for i := 0; i < workerNum; i++ {
-		wg.Add(1)
 		go worker(chunkChan, resultMap, &wg)
 	}
 
@@ -56,6 +55,7 @@ func main() {
 			close(chunkChan)
 			break
 		}
+		wg.Add(1)
 		chunkChan <- chunk
 	}
 	wg.Wait()
@@ -74,10 +74,10 @@ func main() {
 }
 
 func worker(chunkChan <-chan []byte, resultMap *sync.Map, wg *sync.WaitGroup) {
-	defer wg.Done()
 
 	for chunk := range chunkChan {
 		processChunk(chunk, resultMap)
+		wg.Done()
 	}
 }
 
