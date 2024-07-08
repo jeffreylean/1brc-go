@@ -36,48 +36,64 @@ func main() {
 
 	var chunk []byte
 	var wg sync.WaitGroup
-	resultMap := new(sync.Map)
 	ptr := 0
 	buff := make([]byte, 1024*1024)
-	chunkChan := make(chan []byte, 100000)
+	chunkChan := make(chan []byte, workerNum)
+	resultChan := make(chan map[string]*Station, 10)
 	reader := bufio.NewReader(file)
 
 	for i := 0; i < workerNum; i++ {
-		go worker(chunkChan, resultMap, &wg)
-	}
-
-	for {
-		chunk, ptr, err = getChunk(reader, &buff, ptr)
-		if err != nil {
-			panic(err)
-		}
-		if len(chunk) == 0 {
-			close(chunkChan)
-			break
-		}
 		wg.Add(1)
-		chunkChan <- chunk
+		go worker(chunkChan, resultChan, &wg)
 	}
-	wg.Wait()
 
+	go func() {
+		for {
+			chunk, ptr, err = getChunk(reader, &buff, ptr)
+			if err != nil {
+				panic(err)
+			}
+			if len(chunk) == 0 {
+				break
+			}
+			chunkChan <- chunk
+		}
+		close(chunkChan)
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	finalResult := make(map[string]*Station)
+	for resultMap := range resultChan {
+		for k, v := range resultMap {
+			if st, ok := finalResult[k]; ok {
+				st.min = min(st.min, v.min)
+				st.max = max(st.max, v.max)
+				st.sum += int64(v.sum)
+				st.count += v.count
+			} else {
+				stations = append(stations, k)
+				finalResult[k] = &Station{station: k, min: v.min, max: v.max, sum: int64(v.sum), count: v.count}
+			}
+		}
+	}
 	sort.Strings(stations)
+
 	print("{")
 	for _, s := range stations {
-		if r, ok := resultMap.Load(s); ok {
-			r := r.(*Station)
+		if r, ok := finalResult[s]; ok {
 			fmt.Printf("%s:%.1f/%.1f/%.1f;\n", s, float64(r.min)/10, float64(r.sum)/float64(10)/float64(r.count), float64(r.max)/10)
 		}
 	}
 	print("}\n")
 	fmt.Printf("Time taken: %0.6f\n", time.Since(started).Seconds())
-	fmt.Println(len(stations))
 }
 
-func worker(chunkChan <-chan []byte, resultMap *sync.Map, wg *sync.WaitGroup) {
+func worker(chunkChan <-chan []byte, resultChan chan<- map[string]*Station, wg *sync.WaitGroup) {
+	defer wg.Done()
 
 	for chunk := range chunkChan {
-		processChunk(chunk, resultMap)
-		wg.Done()
+		processChunk(chunk, resultChan)
 	}
 }
 
@@ -106,7 +122,9 @@ func getChunk(reader *bufio.Reader, buff *[]byte, ptr int) ([]byte, int, error) 
 	return chunk, ptr, nil
 }
 
-func processChunk(chunk []byte, resultMap *sync.Map) {
+func processChunk(chunk []byte, resultChan chan<- map[string]*Station) {
+	resultMap := make(map[string]*Station)
+
 	for {
 		// Split the bytes
 		station, after, found := bytes.Cut(chunk, []byte(";"))
@@ -145,17 +163,15 @@ func processChunk(chunk []byte, resultMap *sync.Map) {
 		// Update chunk
 		chunk = after[index:]
 
-		if st, exist := resultMap.Load(stationString); exist {
-			st := st.(*Station)
-
+		if st, exist := resultMap[stationString]; exist {
 			st.min = min(st.min, temp)
 			st.max = max(st.max, temp)
 			st.sum += int64(temp)
 			st.count++
 		} else {
 			stationString := string(station)
-			resultMap.Store(stationString, &Station{station: stationString, min: temp, max: temp, sum: int64(temp), count: 1})
-			stations = append(stations, stationString)
+			resultMap[stationString] = &Station{station: stationString, min: temp, max: temp, sum: int64(temp), count: 1}
 		}
 	}
+	resultChan <- resultMap
 }
